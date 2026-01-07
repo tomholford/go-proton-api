@@ -41,6 +41,46 @@ func (r *CreateFolderReq) SetHash(name string, hashKey []byte) error {
 	return nil
 }
 
+// SetNodeHashKey generates and sets the NodeHashKey field.
+func (r *CreateFolderReq) SetNodeHashKey(nodeKR *crypto.KeyRing) error {
+	rawHashKey, err := crypto.RandomToken(32)
+	if err != nil {
+		return err
+	}
+
+	encHashKey, err := nodeKR.Encrypt(crypto.NewPlainMessage(rawHashKey), nodeKR)
+	if err != nil {
+		return err
+	}
+
+	encHashKeyString, err := encHashKey.GetArmored()
+	if err != nil {
+		return err
+	}
+
+	r.NodeHashKey = encHashKeyString
+	return nil
+}
+
 type CreateFolderRes struct {
 	ID string // Encrypted Link ID
+}
+
+// CheckAvailableHashesReq is the request body for checking available hashes.
+type CheckAvailableHashesReq struct {
+	Hashes []string
+}
+
+// CheckAvailableHashesRes is the response from checking available hashes.
+type CheckAvailableHashesRes struct {
+	AvailableHashes []string
+	PendingHashDtos []PendingHashData `json:"PendingHashDtos,omitempty"`
+}
+
+// PendingHashData contains information about pending (draft) uploads.
+type PendingHashData struct {
+	Hash       string
+	RevisionID string
+	LinkID     string
+	ClientUID  string `json:",omitempty"`
 }

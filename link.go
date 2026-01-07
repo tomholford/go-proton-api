@@ -47,3 +47,9 @@ func (c *Client) CreateFolder(ctx context.Context, shareID string, req CreateFol
 
 	return res.Folder, nil
 }
+
+func (c *Client) MoveLink(ctx context.Context, shareID, linkID string, req MoveLinkReq) error {
+	return c.do(ctx, func(r *resty.Request) (*resty.Response, error) {
+		return r.SetBody(req).Put("/drive/shares/" + shareID + "/links/" + linkID + "/move")
+	})
+}

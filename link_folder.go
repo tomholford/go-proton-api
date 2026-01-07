@@ -101,3 +101,15 @@ func (c *Client) DeleteChildren(ctx context.Context, shareID, linkID string, chi
 
 	return nil
 }
+
+func (c *Client) CheckAvailableHashes(ctx context.Context, shareID, linkID string, req CheckAvailableHashesReq) (CheckAvailableHashesRes, error) {
+	var res CheckAvailableHashesRes
+
+	if err := c.do(ctx, func(r *resty.Request) (*resty.Response, error) {
+		return r.SetBody(req).SetResult(&res).Post("/drive/shares/" + shareID + "/folders/" + linkID + "/checkAvailableHashes")
+	}); err != nil {
+		return CheckAvailableHashesRes{}, err
+	}
+
+	return res, nil
+}
