@@ -2,6 +2,7 @@ package proton
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
@@ -17,12 +18,13 @@ type Link struct {
 	LinkID       string // Encrypted file/folder ID
 	ParentLinkID string // Encrypted parent folder ID (LinkID). Root link has null ParentLinkID.
 
-	Type     LinkType
-	Name     string // Encrypted file name
-	Hash     string // HMAC of name encrypted with parent hash key
-	Size     int64
-	State    LinkState
-	MIMEType string
+	Type               LinkType
+	Name               string // Encrypted file name
+	NameSignatureEmail string // Signature email for link name
+	Hash               string // HMAC of name encrypted with parent hash key
+	Size               int64
+	State              LinkState
+	MIMEType           string
 
 	CreateTime     int64 // Link creation time
 	ModifyTime     int64 // Link modification time (on API, real modify date is stored in XAttr)
@@ -31,6 +33,8 @@ type Link struct {
 	NodeKey                 string // The private NodeKey, used to decrypt any file/folder content.
 	NodePassphrase          string // The passphrase used to unlock the NodeKey, encrypted by the owning Link/Share keyring.
 	NodePassphraseSignature string
+	SignatureEmail          string // Signature email for the NodePassphraseSignature
+	XAttr                   string // Extended attributes (modification time, size) encrypted with node key
 
 	FileProperties   *FileProperties
 	FolderProperties *FolderProperties
@@ -93,7 +97,7 @@ func (l Link) GetKeyRing(parentNodeKR, addrKR *crypto.KeyRing) (*crypto.KeyRing,
 	return crypto.NewKeyRing(unlockedKey)
 }
 
-func (l Link) GetHashKey(nodeKR *crypto.KeyRing) ([]byte, error) {
+func (l Link) GetHashKey(parentNodeKR, addrKR *crypto.KeyRing) ([]byte, error) {
 	if l.Type != LinkTypeFolder {
 		return nil, errors.New("link is not a folder")
 	}
@@ -103,9 +107,19 @@ func (l Link) GetHashKey(nodeKR *crypto.KeyRing) ([]byte, error) {
 		return nil, err
 	}
 
-	dec, err := nodeKR.Decrypt(enc, nodeKR, crypto.GetUnixTime())
-	if err != nil {
-		return nil, err
+	// Check if the message has signature key IDs to determine verification mode
+	_, ok := enc.GetSignatureKeyIDs()
+	var dec *crypto.PlainMessage
+	if ok {
+		dec, err = parentNodeKR.Decrypt(enc, addrKR, crypto.GetUnixTime())
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		dec, err = parentNodeKR.Decrypt(enc, nil, 0)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return dec.GetBinary(), nil
@@ -162,16 +176,78 @@ type RevisionMetadata struct {
 	ManifestSignature string        // Signature of the revision manifest, signed with user's address key of the share.
 	SignatureEmail    string        // Email of the user that signed the revision.
 	State             RevisionState // State of revision
+	XAttr             string        // Extended attributes (modification time, size) encrypted with node key
 	Thumbnail         Bool          // Whether the revision has a thumbnail
 	ThumbnailHash     string        // Hash of the thumbnail
 }
 
-// Revisions are only for files, they represent “versions” of files.
+// GetDecXAttrString decrypts and parses the extended attributes from the revision metadata.
+func (r *RevisionMetadata) GetDecXAttrString(addrKR, nodeKR *crypto.KeyRing) (*RevisionXAttrCommon, error) {
+	if r.XAttr == "" {
+		return nil, nil
+	}
+
+	XAttrMsg, err := crypto.NewPGPMessageFromArmored(r.XAttr)
+	if err != nil {
+		return nil, err
+	}
+
+	decXAttr, err := nodeKR.Decrypt(XAttrMsg, addrKR, crypto.GetUnixTime())
+	if err != nil {
+		return nil, err
+	}
+
+	var data RevisionXAttr
+	if err := json.Unmarshal(decXAttr.Data, &data); err != nil {
+		return nil, err
+	}
+
+	return &data.Common, nil
+}
+
+// Revisions are only for files, they represent "versions" of files.
 // Each file can have 1 active revision and n obsolete revisions.
 type Revision struct {
 	RevisionMetadata
 
 	Blocks []Block
+}
+
+// GetDecXAttrString decrypts and parses the extended attributes from the revision.
+func (r *Revision) GetDecXAttrString(addrKR, nodeKR *crypto.KeyRing) (*RevisionXAttrCommon, error) {
+	if r.XAttr == "" {
+		return nil, nil
+	}
+
+	XAttrMsg, err := crypto.NewPGPMessageFromArmored(r.XAttr)
+	if err != nil {
+		return nil, err
+	}
+
+	decXAttr, err := nodeKR.Decrypt(XAttrMsg, addrKR, crypto.GetUnixTime())
+	if err != nil {
+		return nil, err
+	}
+
+	var data RevisionXAttr
+	if err := json.Unmarshal(decXAttr.Data, &data); err != nil {
+		return nil, err
+	}
+
+	return &data.Common, nil
+}
+
+// RevisionXAttrCommon contains the common extended attributes for a revision.
+type RevisionXAttrCommon struct {
+	ModificationTime string
+	Size             int64
+	BlockSizes       []int64
+	Digests          map[string]string
+}
+
+// RevisionXAttr is the wrapper for extended attributes.
+type RevisionXAttr struct {
+	Common RevisionXAttrCommon
 }
 
 type RevisionState int
