@@ -22,6 +22,8 @@ const (
 	SuccessCode                 Code = 1000
 	MultiCode                   Code = 1001
 	InvalidValue                Code = 2001
+	AFileOrFolderNameExist      Code = 2500 // Drive: file or folder name already exists
+	ADraftExist                 Code = 2501 // Drive: draft already exists on this revision
 	AppVersionMissingCode       Code = 5001
 	AppVersionBadCode           Code = 5003
 	UsernameInvalid             Code = 6003 // Deprecated, but still used.
@@ -30,6 +32,13 @@ const (
 	PaidPlanRequired            Code = 10004
 	AuthRefreshTokenInvalid     Code = 10013
 	HumanValidationInvalidToken Code = 12087
+)
+
+// Drive-specific errors
+var (
+	ErrFileNameExist   = errors.New("a file with that name already exists (Code=2500)")
+	ErrFolderNameExist = errors.New("a folder with that name already exists (Code=2500)")
+	ErrDraftExist      = errors.New("draft already exists on this revision (Code=2501)")
 )
 
 type ErrDetails []byte
